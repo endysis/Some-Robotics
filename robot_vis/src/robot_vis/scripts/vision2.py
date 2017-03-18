@@ -34,18 +34,22 @@ class image_converter():
     isMoving = True
     isTurning = False
     
-    redGo = False
-    greenGo = False
-    blueGo = False
-    yellowGo = False    
+    redComplete = False
+    greenComplete = False
+    blueComplete = False
+    yellowComplete = False    
     
     redFound = False
     greenFound = False
     blueFound = False
     yellowFound = False
     
+    stopCheck = False
+    isCenter = False
     
+    colourArr = []
     
+    laserScan = 0
     redDistance = 0
     greenDistance = 0
     blueDistance = 0
@@ -69,10 +73,6 @@ class image_converter():
         self.twist = Twist()       
         
         self.goal_sent = False
-        #self.move_base = actionlib.SimpleActionClient("/turtlebot/move_base",MoveBaseAction)
-        #self.move_base.wait_for_server()
-        
-        
         self.basePub = rospy.Publisher("/turtlebot/move_base_simple/goal", PoseStamped, queue_size = 0)
         
         
@@ -96,60 +96,56 @@ class image_converter():
         
         
     def goToColour(self, lin, ang, home):
-            
-        self.twist.linear.x = lin
-        self.twist.angular.z = -float(ang)/100
-        self.cmd_vel.publish(self.twist)        
+        global laserScan   
+        global stopCheck
+        global colourArr
+        global isCenter
+        
+        global redComplete
+        global greenComplete
+        global blueComplete
+        global yellowComplete          
         
         
+        if self.stopCheck == False:
+            self.twist.linear.x = lin
+            self.twist.angular.z = -float(ang)/100
+            self.cmd_vel.publish(self.twist)
+            self.isCenter = True
+            print ("Should be moving")
         
-    def goto(self,pos,quat):
-        #Sending a goal
-        self.goal_sent = True
-        goal = MoveBaseGoal()
-
-        goal.target_pose.header.frame_id = 'map'
-        goal.target_pose.header.stamp = rospy.Time.now()
-        goal.target_pose.pose = Pose(Point(pos['x'], pos['y'], 0.000),
-                                     Quaternion(quat['r1'], quat['r2'], quat['r3'], quat['r4']))
-
-        
-        print goal
-        
-        # The moving comences
-        self.move_base.send_goal(goal)
-                        
-        # Allow Turtlebot 60s to complete the task
-        success = self.move_base.wait_for_result(rospy.Duration(60))
-                        
-        state = self.move_base.get_state()
-        print state
-        result = False
-        
-        if success and state == GoalStatus.SUCCEEDED:
-            #The robot has made to goal
-            result = True
-            
-        else:
-            self.move_base.cancel_goal()
-            
-            
-        self.goal_sent = False
-        return result
-        
+        print (self.laserScan)
         
                 
+        
+        if self.laserScan > 0 and self.laserScan <= 1:
+            self.stopCheck = True
+            if self.colourArr[0] == "Red":
+                self.redComplete = True
+            elif self.colourArr[0] == "Green":
+                self.greenComplete = True
+            elif self.coloutArr[0] == "Blue":
+                self.blueComplete = True
+            elif self.colourArr[0] == "Yellow":
+                self.yellowComplete = True
+                
+            self.colourArr.pop(0) 
+            
+
+
+        
     def shutdown(self):
         if self.goal_sent:
             self.move_base.cancel_goal()
         rospy.loginfo("Stop")
         rospy.sleep(1)
         
-        
     
-    def laserCallBack(self,data):        
-        range_ahead = data.ranges[len(data.ranges)/2]
-        #print "range ahead:  %0.1f" % range_ahead
+    
+    def laserCallBack(self,data):      
+        global laserScan
+        self.laserScan = data.ranges[len(data.ranges)/2]
+        #print ("range ahead:  %0.1f" % self.laserScan)
         
         
         
@@ -168,6 +164,8 @@ class image_converter():
         global yellowGo
     
     
+        global colourArr
+    
     
         global redDistance
         global greenDistance
@@ -177,8 +175,8 @@ class image_converter():
         try:
             cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
             cv_image2 = self.bridge.imgmsg_to_cv2(data, "bgr8")
-        except CvBridgeError, e:
-            print e
+        except CvBridgeError:
+            print ()
             
         
         hsv_img = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
@@ -196,7 +194,7 @@ class image_converter():
         hsv_threshYELLOW = cv2.inRange(hsv_img,
                                  numpy.array((30, 100, 100)),
                                  numpy.array((40, 255, 255)))                           
-                                 
+                                                   
         hsv_threshBLUE = cv2.inRange(hsv_img,
                                  numpy.array((110, 100, 100)),
                                  numpy.array((130, 255, 255)))
@@ -239,47 +237,45 @@ class image_converter():
         h, w, d = hsv_img.shape
         
         
-        if self.isMoving == False and self.isTurning == False:
-            print("Is not moving or turning")
-            self.moveToPoint(0,0,0)
+
  
 #        print("Callback running")
  
         #if redDistance > 
         
-        
         # So we need a way to pick the max distance and go to it, if there are two or more there
         
-        self.redGo = True
-        self.redFound = True
         
             
         for c in hsv_contoursR:
-            a = cv2.contourArea(c)
-            self.redDistance = a
-            cv2.drawContours(cv_image, c, -1, (255, 0, 0))
-            # Finds the center of the contour area
-            centerConX = int(momR['m10']/momR['m00'])
-            # No idea what this means got from the workshop code                
-            angVel = centerConX - w/2
-            #print("Red")
-            print " Red Distance %d" % self.redDistance
-            if(self.redFound == True and self.redGo == True):
-                self.goToColour(0.2,angVel,1)
-                
-                    
-         
-                        
-                        
+            a = cv2.contourArea(c)       
+            if a > 0:
+                if self.redFound == False:
+                    self.colourArr.append('Red')
+                    print ("Added red")
+                    print (self.colourArr[0])
+                    self.redFound = True
+                self.redDistance = a
+                cv2.drawContours(cv_image, c, -1, (255, 0, 0))  # Finds the center of the contour area
+                centerConX = int(momR['m10']/momR['m00']) # No idea what this means got from the workshop code 
+                angVel = centerConX - w/2
+                #print("Red")
+                #print (" Red Distance %d" % self.redDistance)
+                if(self.redFound == True and self.redComplete == False):
+                    if(self.colourArr[0] == "Red"):
+                         self.goToColour(0.2,angVel,1)
+
+                      
+                      
         for c in hsv_contoursG:
             a = cv2.contourArea(c)
             self.greenDistance = a
             #print 'A: ' + str(a)
             cv2.drawContours(cv_image, c, -1, (255, 0, 0))              
             centerConX = int(momG['m10']/momG['m00'])
-            print "Green Distance %d" % self.greenDistance
-            
-            
+            print ("Green Distance %d" % self.greenDistance)
+                       
+                       
         
         for c in hsv_contoursY:
             a = cv2.contourArea(c)
@@ -289,8 +285,8 @@ class image_converter():
                 centerConX = int(momY['m10']/momY['m00'])
                 print("Yellow")
 
-                
-                
+
+                                
         for c in hsv_contoursB:
             a = cv2.contourArea(c)
             #print 'A: ' + str(a)
@@ -299,14 +295,11 @@ class image_converter():
                 centerConX = int(momB['m10']/momB['m00'])
                 print("Blue")
                 
-          
-           
+         
         #print '===='
         cv2.imshow("Image window", cv_image)
         cv2.imshow("Image window2",mask)
         
-
-
 
         
         def turnAround(self):
@@ -317,11 +310,12 @@ class image_converter():
             self.isTurning = False
         
 
-            
+        
+        if self.isMoving == False and self.isTurning == False:
+            print("Is not moving or turning")
+            self.moveToPoint(0,0,0)            
         
                 
-            
-            
 
 
 
@@ -329,30 +323,9 @@ class image_converter():
 if __name__ == '__main__':
     try:
         rospy.init_node('image_converter',anonymous=False)
-      #  navigator = image_converter()
-        
-      # position = {'x':1, 'y' : -5, 'z':0.0}
-     #   quartonion = {'r1' : 0.000, 'r2' : 0.000, 'r3' : 0.000, 'r4' : 1.000}
-        
-        
-    #    rospy.loginfo("Go to (%s, %s) pose", position['x'], position['y'])
-    #    success = navigator.goto(position,quartonion)
-       
-     #   if success:
-      #      rospy.loginfo("The robot has reached its position")
-        
-     #   else:
-      #      rospy.loginfo("The robot has not reached its position")
-            
-            
-       # rospy.sleep(1)
-        
 
     except rospy.ROSInterruptException:
         rospy.loginfo("Ctrl-C caught. Quitting")
-
-
-
 
 
 image_converter()
