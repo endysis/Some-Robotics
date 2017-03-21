@@ -8,6 +8,7 @@ from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 from std_msgs.msg import Float32
 from move_base_msgs.msg import MoveBaseActionFeedback
+from move_base_msgs.msg import MoveBaseActionResult
 from cv_bridge import CvBridge, CvBridgeError
 from geometry_msgs.msg import Twist
 
@@ -27,6 +28,8 @@ from geometry_msgs.msg import PoseStamped
        # 0 - 5 Red
        # 30 - 60 Yello
        # 110 - 130 Blue
+
+
 
 
 class image_converter():
@@ -60,7 +63,7 @@ class image_converter():
     yellowArea = 0
     blueArea = 0
     
-    coorValues = [[-3.5,-4.4],[1.47,-4.25],[1.15,-1.25]]  
+    coorValues = [[-4.1,5.1],[2.85,4.35],[-0.7,-0.1]]  
     
     currTarget = coorValues[0]
     
@@ -73,36 +76,49 @@ class image_converter():
         self.image_sub = rospy.Subscriber("/turtlebot/camera/rgb/image_raw",Image, self.callback)
         self.scan_sub = rospy.Subscriber('/turtlebot/scan',LaserScan,self.laserCallBack)
         self.rescallback = rospy.Subscriber("/turtlebot/move_base/feedback", MoveBaseActionFeedback, self.resrobot)
+        self.result = rospy.Subscriber("/turtlebot/move_base/result",MoveBaseActionResult,self.resultBack)
         
         #Publish to the cmd_vel topic
         self.cmd_vel = rospy.Publisher('/turtlebot/cmd_vel', Twist, queue_size = 10)
         self.twist = Twist()       
         
-        self.goal_sent = False
         self.basePub = rospy.Publisher("/turtlebot/move_base_simple/goal", PoseStamped, queue_size = 0)
+        
+   
+  
         
         
         
     def resrobot(self, value):
-            
             global coorValues
+            currX = value.feedback.base_position.pose.position.x
+            currY = value.feedback.base_position.pose.position.y
             
-            currX = value.position.x
-            currY = value.position.y
-        
+            print(value.status.status)            
+            
             if value.status.status == 1:
                 self.isMoving = True
                 print ("It is moving",value.status.status)
+      
             else:
                 print ("It is not moving",value.status.status)
                 
-                if currX > (self.coorValues[0][0] - 1) and currX < (self.coorValues[0][0] + 1) and currY > (self.coorValues[0][1] - 1) and currY < (self.coorValues[0][1] + 1): 
-                    self.coorValues.pop(0)
-                    self.isMoving = False
+#                if currX > (self.coorValues[0][0] - 1) and currX < (self.coorValues[0][0] + 1) and currY > (self.coorValues[0][1] - 1) and currY < (self.coorValues[0][1] + 1): 
+#                    print ("Robot is at its destination")                    
+#                    self.coorValues.pop(0)
+#                    self.isMoving = False
                     
-                
-                
-                
+                                
+    def resultBack(self,value):
+        global coorValues        
+        
+        if value.status.status == 3:
+            print("Landmark Reached")
+            self.coorValues.pop(0)
+            self.isMoving = False
+            print(self.coorValues[0])
+            
+        
  
     def moveToPoint(self,posX,posY,posZ):
        global isMoving        
@@ -113,10 +129,6 @@ class image_converter():
        goal.pose.position.y = posY
        goal.pose.orientation.w = 1
        self.basePub.publish(goal)
-        
-        
-        
-        
         
         
         
@@ -169,23 +181,11 @@ class image_converter():
             # Pops off red, then goes straght to green but because green equals 0 now, straight away
             # it is marked as complete
 
-
-
-
-        
-    def shutdown(self):
-        if self.goal_sent:
-            self.move_base.cancel_goal()
-        rospy.loginfo("Stop")
-        rospy.sleep(1)
-        
-    
     
     def laserCallBack(self,data):      
         global laserScan
         self.laserScan = data.ranges[len(data.ranges)/2]
         #print ("range ahead:  %0.1f" % self.laserScan)
-        
         
         
     def callback(self, data):
@@ -207,14 +207,12 @@ class image_converter():
         global blueDistance
         global yellowDistance
         
-        
         global redArea
         global greenArea
         global yellowArea
         global blueArea          
         
         global coorValues   
-        
         
         try:
             cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
@@ -286,12 +284,13 @@ class image_converter():
         #if redDistance > 
         
         # So in order for the robot to got to a colour it has to be found, there has to not be completed and it needs to be the first element in the memory array
-         
-        
+ 
+ 
         if self.isMoving == False and self.isTurning == False:
             print("Is not moving or turning")
             self.moveToPoint(self.coorValues[0][0],self.coorValues[0][1],0)
-
+        
+        
 
         if self.redFound == True:        
             
@@ -360,22 +359,13 @@ class image_converter():
         cv2.imshow("Image window2",mask)
        
         
-        print (self.colourArr)
-            
-                
-            
-            
-        
         def turnAround(self):
             self.isTurning = True
             self.twist.linear.x = 0.0
             self.twist.angular.z = 11
             self.cmd_vel.publish(self.twist)
-            self.isTurning = False
-        
-        
-          
-        
+            self.isTurning = False  
+
 
 if __name__ == '__main__':
     try:
