@@ -35,7 +35,7 @@ from geometry_msgs.msg import PoseStamped
 class image_converter():
     
     isMoving = False
-    isTurning = False
+    isFinding = False
     
     redComplete = False
     greenComplete = False
@@ -50,6 +50,8 @@ class image_converter():
     stopCheck = False
     isCenter = False
     
+    enableFind = False
+    
     colourArr = []
     
     laserScan = 0
@@ -63,7 +65,9 @@ class image_converter():
     yellowArea = 0
     blueArea = 0
     
-    coorValues = [[-4.1,5.1],[2.85,4.35],[-0.7,-0.1]]  
+    robotTurnCount = 0
+    
+    coorValues = [[1.46,-4.0],[0.74,-0.9],[-4.12,-0.007],[-0.8,3.6]]  
     
     currTarget = coorValues[0]
     
@@ -82,23 +86,19 @@ class image_converter():
         self.cmd_vel = rospy.Publisher('/turtlebot/cmd_vel', Twist, queue_size = 10)
         self.twist = Twist()       
         
-        self.basePub = rospy.Publisher("/turtlebot/move_base_simple/goal", PoseStamped, queue_size = 0)
+        self.basePub = rospy.Publisher("/turtlebot/move_base_simple/goal", PoseStamped, queue_size = 100)
         
    
-  
-        
-        
-        
     def resrobot(self, value):
             global coorValues
             currX = value.feedback.base_position.pose.position.x
             currY = value.feedback.base_position.pose.position.y
             
-            print(value.status.status)            
+            #print(value.status.status)            
             
             if value.status.status == 1:
                 self.isMoving = True
-                print ("It is moving",value.status.status)
+                #print ("It is moving",value.status.status)
       
             else:
                 print ("It is not moving",value.status.status)
@@ -111,12 +111,13 @@ class image_converter():
                                 
     def resultBack(self,value):
         global coorValues        
-        
+        global enableFind
         if value.status.status == 3:
             print("Landmark Reached")
+            
+            self.enableFind = True  
             self.coorValues.pop(0)
-            self.isMoving = False
-            print(self.coorValues[0])
+            print("New Coordinates")
             
         
  
@@ -137,17 +138,15 @@ class image_converter():
         global stopCheck
         global colourArr
         global isCenter
-        
         global redComplete
         global greenComplete
         global blueComplete
         global yellowComplete          
-        
         global redArea
         global greenArea
         global yellowArea
         global blueArea          
-        
+        global enableFind
         
         if self.stopCheck == False:
             self.twist.linear.x = lin
@@ -156,23 +155,26 @@ class image_converter():
             self.isCenter = True
             #print ("Should be moving")
         
-        
         if self.laserScan > 0.5 and self.laserScan <= 1:
             self.stopCheck = True
             if self.colourArr[0] == "Red" and self.redArea > 48000:
                 self.redComplete = True
+                self.redFound = False # For the turning statment
                 self.colourArr.pop(0)
                 
             elif self.colourArr[0] == "Green" and self.greenArea > 48000:
                 self.greenComplete = True
+                self.greenFound = False
                 self.colourArr.pop(0)
                 
             elif self.colourArr[0] == "Blue" and self.blueArea > 48000:
                 self.blueComplete = True
+                self.blueFound = False
                 self.colourArr.pop(0)
                 
             elif self.colourArr[0] == "Yellow" and self.yellowArea > 48000:
                 self.yellowComplete = True
+                self.yellowFound = False
                 self.colourArr.pop(0)
                 
             self.stopCheck = False
@@ -188,6 +190,12 @@ class image_converter():
         #print ("range ahead:  %0.1f" % self.laserScan)
         
         
+    def turn(self):
+        self.twist.linear.x = 0.0
+        self.twist.angular.z = 3
+        self.cmd_vel.publish(self.twist) 
+
+        
     def callback(self, data):
         global isMoving
         global redFound
@@ -201,7 +209,6 @@ class image_converter():
         global yellowGo
     
         global colourArr
-    
         global redDistance
         global greenDistance
         global blueDistance
@@ -212,7 +219,11 @@ class image_converter():
         global yellowArea
         global blueArea          
         
-        global coorValues   
+        global coorValues 
+        
+        global isFinding    
+        
+        global robotTurnCount
         
         try:
             cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
@@ -265,7 +276,6 @@ class image_converter():
                                              cv2.RETR_TREE,
                                              cv2.CHAIN_APPROX_SIMPLE)
 
-        
 
         # Gets da moments                                          
         momR = cv2.moments(hsv_threshRED)
@@ -286,86 +296,113 @@ class image_converter():
         # So in order for the robot to got to a colour it has to be found, there has to not be completed and it needs to be the first element in the memory array
  
  
-        if self.isMoving == False and self.isTurning == False:
-            print("Is not moving or turning")
-            self.moveToPoint(self.coorValues[0][0],self.coorValues[0][1],0)
+        if self.isMoving == False and self.enableFind == False:
+            if(not self.coorValues):
+                print ("Search Complete")
+            else:
+                print("Entered Move_base Command")
+                print (self.coorValues)
+                self.moveToPoint(self.coorValues[0][0],self.coorValues[0][1],0)
         
         
 
-        if self.redFound == True:        
+        if self.enableFind == True:        
             
-            for c in hsv_contoursR:
-                a = cv2.contourArea(c)
-                self.redArea = a
-                print ("Area %d",self.redArea)
-                if a > 0:
-                    if self.redFound == False:
-                        self.colourArr.append('Red')
-                        print ("Added red")
-                        print (self.colourArr[0])
-                        self.redFound = True
-                    self.redDistance = a
-                    cv2.drawContours(cv_image, c, -1, (255, 0, 0))  # Finds the center of the contour area
-                    centerConX = int(momR['m10']/momR['m00']) # No idea what this means got from the workshop code 
+            if(self.redComplete == False):            
+                for c in hsv_contoursR:
+                    a = cv2.contourArea(c)
+                    self.redArea = a
+                    if a > 9000:  # Makes sure the robot only goes to nodes within its area
+                        if self.redFound == False:
+                            self.colourArr.append('Red')
+                            print ("Added red")
+                            self.redFound = True
+                        self.redDistance = a
+                        cv2.drawContours(cv_image, c, -1, (255, 0, 0))  # Finds the center of the contour area
+                        centerConX = int(momR['m10']/momR['m00']) # No idea what this means got from the workshop code 
+                        angVel = centerConX - w/2
+                        #print("Red")
+                        #print (" Red Distance %d" % self.redDistance)
+                        if(self.redFound == True and self.redComplete == False):
+                            if(self.colourArr[0] == "Red"):
+                                 self.goToColour(0.5,angVel,1)
+
+
+            if(self.greenComplete == False):              
+                for c in hsv_contoursG:
+                    a = cv2.contourArea(c)
+                    self.greenArea = a
+                    if a > 9000:
+                        if self.greenFound == False:
+                            self.colourArr.append('Green')
+                            print ("Added Green")
+                            self.greenFound = True
+                    self.greenDistance = a
+                    cv2.drawContours(cv_image, c, -1, (255, 0, 0))              
+                    centerConX = int(momG['m10']/momG['m00'])
                     angVel = centerConX - w/2
-                    #print("Red")
-                    #print (" Red Distance %d" % self.redDistance)
-                    if(self.redFound == True and self.redComplete == False):
-                        if(self.colourArr[0] == "Red"):
-                             self.goToColour(0.5,angVel,1)
-
-                          
-            for c in hsv_contoursG:
-                a = cv2.contourArea(c)
-                self.greenArea = a
-                if a > 0:
-                    if self.greenFound == False:
-                        self.colourArr.append('Green')
-                        print ("Added Green")
-                        self.greenFound = True
-                self.greenDistance = a
-                #print 'A: ' + str(a)
-                cv2.drawContours(cv_image, c, -1, (255, 0, 0))              
-                centerConX = int(momG['m10']/momG['m00'])
-                angVel = centerConX - w/2
-                if(self.greenFound == True and self.greenComplete == False):
-                        if(self.colourArr[0] == "Green"):
-                             self.goToColour(0.5,angVel,1)
+                    if(self.greenFound == True and self.greenComplete == False):
+                            if(self.colourArr[0] == "Green"):
+                                 self.goToColour(0.5,angVel,1)
                        
-            
-            for c in hsv_contoursY:
-                a = cv2.contourArea(c)
-                self.yellowArea = a
-                #print 'A: ' + str(a)
-                if a > 0:
+            if(self.yellowComplete == False):
+                for c in hsv_contoursY:
+                    a = cv2.contourArea(c)
+                    self.yellowArea = a
+                    #print 'A: ' + str(a)
+                    if a > 9000:
+                        if self.yellowFound == False:
+                            self.colourArr.append('Yellow')
+                            print ("Added Yellow")
+                            self.yellowFound = True
+                    self.greenDistance = a
                     cv2.drawContours(cv_image, c, -1, (255, 0, 0))              
                     centerConX = int(momY['m10']/momY['m00'])
-                    print("Yellow")
+                    angVel = centerConX - w/2
+                    if(self.yellowFound == True and self.yellowComplete == False):
+                            if(self.colourArr[0] == "Yellow"):
+                                 self.goToColour(0.5,angVel,1)
     
-    
-                                    
-            for c in hsv_contoursB:
-                a = cv2.contourArea(c)
-                self.blueArea = a
-                #print 'A: ' + str(a)
-                if a > 0:
+            if(self.blueComplete == False):                        
+                for c in hsv_contoursB:
+                    a = cv2.contourArea(c)
+                    self.blueArea = a
+                    #print 'A: ' + str(a)
+                    if a > 1000:
+                        if self.blueFound == False:
+                            self.colourArr.append('Blue')
+                            print ("Added Blue")
+                            self.blueFound = True
                     cv2.drawContours(cv_image, c, -1, (255, 0, 0))              
                     centerConX = int(momB['m10']/momB['m00'])
-                    print("Blue")
+                    angVel = centerConX - w/2
+                    if(self.blueFound == True and self.blueComplete == False):
+                            if(self.colourArr[0] == "Blue"):
+                                 self.goToColour(0.5,angVel,1)
                 
          
+             
+            if(self.redFound == False and self.greenFound == False and self.yellowFound == False and self.blueFound == False): # Turns if the robot sees nothing in its sights
+                self.turn()
+                self.robotTurnCount += 1
+                
+                if self.robotTurnCount >= 5:
+                    self.robotTurnCount = 0
+                    self.enableFind = False
+                    self.isMoving = False
+                    
+                    
+                
+                
+            
+            
+            
+         
         #print '===='
-        cv2.imshow("Image window", cv_image)
+        #cv2.imshow("Image window", cv_image)
         cv2.imshow("Image window2",mask)
        
         
-        def turnAround(self):
-            self.isTurning = True
-            self.twist.linear.x = 0.0
-            self.twist.angular.z = 11
-            self.cmd_vel.publish(self.twist)
-            self.isTurning = False  
-
 
 if __name__ == '__main__':
     try:
