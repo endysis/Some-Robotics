@@ -34,9 +34,9 @@ from geometry_msgs.msg import PoseStamped
 
 class image_converter():
     
+    
     isMoving = False
     isFinding = False
-    
     redComplete = False
     greenComplete = False
     blueComplete = False
@@ -70,14 +70,12 @@ class image_converter():
     robotTurnCount = 0
     
     coorValues = [[-1.28,-4.51],[1.5,-4.2],[1,-1],[-3.96,1.908],[-4.24,0.52],[1.1,2.05],[-0.81,3.74],[1.18,4.65],[3.28,4.38]]  
-    #coorValues = [[1.46,-4.0],[0.74,-0.9],[-0.85,-1.39],[-4.12,-0.007],[-4.19,1.48],[-3.86,-1.67],[-0.66,1.85],[-0.8,3.6]] 
-    
-    #coorValues = [[1.46,-4.0],[0.74,-0.9],[2.686,1.105],[-4.12,-0.007],[-4.0,1.85],[-1.9,-1.7],[-0.8,3.6]] 
-    
+
     currTarget = coorValues[0]
     
+    
+    
     def __init__(self):
-        
         cv2.namedWindow("Image window", 1)
         cv2.namedWindow("Image window2", 1)
         cv2.startWindowThread()
@@ -93,6 +91,7 @@ class image_converter():
         
         self.basePub = rospy.Publisher("/turtlebot/move_base_simple/goal", PoseStamped, queue_size = 100)
         
+        
    
     def resrobot(self, value):
             global coorValues
@@ -107,29 +106,25 @@ class image_converter():
       
             else:
                 print ("It is not moving",value.status.status)
-                
-#                if currX > (self.coorValues[0][0] - 1) and currX < (self.coorValues[0][0] + 1) and currY > (self.coorValues[0][1] - 1) and currY < (self.coorValues[0][1] + 1): 
-#                    print ("Robot is at its destination")                    
-#                    self.coorValues.pop(0)
-#                    self.isMoving = False
+
                     
                                 
     def resultBack(self,value):
         global coorValues        
         global enableFind
         if value.status.status == 3:
-            print("Landmark Reached")
+            #print("Landmark Reached")
             self.enableFind = True  
             self.coorValues.pop(0)
             #print("New Coordinates")
         else:
             self.enableFind = True  
             self.coorValues.pop(0)
-            print("Has reached else statment")
+            #print("Has reached else statment")
             
             
         
- 
+    # Moves to coordinate position
     def moveToPoint(self,posX,posY,posZ):
        global isMoving        
        goal = PoseStamped()
@@ -141,7 +136,7 @@ class image_converter():
        self.basePub.publish(goal)
         
         
-        
+    # Goes to particular colours    
     def goToColour(self, lin, ang, home):
         global laserScan   
         global stopCheck
@@ -185,14 +180,11 @@ class image_converter():
                 self.yellowComplete = True
                 self.yellowFound = False
                 self.colourArr.pop(0)
-                
-            self.stopCheck = False
-            #print ("New colour is %s",self.colourArr[0])
             
-            # Pops off red, then goes straght to green but because green equals 0 now, straight away
-            # it is marked as complete
-
-    
+            
+            self.stopCheck = False
+      
+    # Callback for laser scanner
     def laserCallBack(self,data):      
         global laserScan
         self.laserScan = data.ranges[len(data.ranges)/2]
@@ -299,15 +291,12 @@ class image_converter():
     
         # width height of image                             
         h, w, d = hsv_img.shape
-        
- 
-#        print("Callback running")
- 
-        #if redDistance > 
-        
+
+
         # So in order for the robot to got to a colour it has to be found, there has to not be completed and it needs to be the first element in the memory array
  
- 
+        
+        
         if self.isMoving == False and self.enableFind == False:
             if(not self.coorValues):
                 if self.completeMess == False:
@@ -326,7 +315,7 @@ class image_converter():
                 for c in hsv_contoursR:
                     a = cv2.contourArea(c)
                     self.redArea = a
-                    print (a)
+                   # print (a)
                     if a > 5000:  # Makes sure the robot only goes to nodes within its area
                         
                         if self.redFound == False:
@@ -396,7 +385,7 @@ class image_converter():
                     if(self.blueFound == True and self.blueComplete == False):
                             if(self.colourArr[0] == "Blue"):
                                  self.goToColour(0.5,angVel,1)
-                
+            
          
              
             if(self.redFound == False and self.greenFound == False and self.yellowFound == False and self.blueFound == False): # Turns if the robot sees nothing in its sights
